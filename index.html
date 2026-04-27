@@ -480,7 +480,7 @@
         <div class="method-card" data-method="adaptive">
           <div class="method-icon" style="background:#eff6ff;">🔀</div>
           <h3>Adaptive Resize</h3>
-          <p>Stretches only the background edges using seam carving. Subject stays 100% untouched.</p>
+          <p>True seam carving — removes/adds least-noticeable pixel paths. Image fills exact size, no black bars, no fake background.</p>
         </div>
 
       </div>
@@ -500,9 +500,13 @@
         <div class="canvas-wrap">
           <canvas id="previewCanvas"></canvas>
         </div>
-        <div id="progressOverlay" style="display:none; position:absolute; inset:0; background:rgba(245,242,238,0.92); backdrop-filter:blur(6px); border-radius:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:0.85rem; z-index:10;">
+        <div id="progressOverlay" style="display:none; position:absolute; inset:0; background:rgba(245,242,238,0.94); backdrop-filter:blur(8px); border-radius:0; flex-direction:column; align-items:center; justify-content:center; gap:0.85rem; z-index:10;">
           <div class="spinner"></div>
           <span id="progressLabel" style="font-family:'Syne',sans-serif; font-size:0.85rem; font-weight:600; color:var(--muted);">Processing…</span>
+          <div style="width:200px; height:4px; background:#e5e0d8; border-radius:4px; overflow:hidden;">
+            <div id="progressBar" style="height:100%; width:0%; background:var(--amber); border-radius:4px; transition:width 0.3s ease;"></div>
+          </div>
+          <span style="font-size:0.72rem; color:#9ca3af; font-family:'DM Sans',sans-serif;">Seam carving in background thread…</span>
         </div>
       </div>
 
@@ -672,94 +676,297 @@ function processSmartCrop() {
     });
 }
 
-// ─── Method 3: Adaptive Resize (Seam Carving via Web Worker) ─────────────────
+// ─── Method 3: Adaptive Resize — TRUE Seam Carving Web Worker ────────────────
 
-// Inline Worker source — seam carving in a self-contained blob
 const SEAM_WORKER_SOURCE = `
+// ══════════════════════════════════════════════════════════════
+//  REAL SEAM CARVING  (Avidan & Shamir 2007)
+//  Handles both width AND height changes in any direction.
+//  Strategy:
+//    - If target is SMALLER  → remove seams (shrink)
+//    - If target is LARGER   → insert seams  (expand)
+//  Processing done on raw pixel arrays — no canvas needed.
+// ══════════════════════════════════════════════════════════════
+
+// ── Helpers ──────────────────────────────────────────────────
+function getPixel(data, w, x, y) {
+  const i = (y * w + x) * 4;
+  return [data[i], data[i+1], data[i+2], data[i+3]];
+}
+function setPixel(data, w, x, y, r, g, b, a) {
+  const i = (y * w + x) * 4;
+  data[i]=r; data[i+1]=g; data[i+2]=b; data[i+3]=a;
+}
+
+// ── Energy map: dual-gradient (Sobel) ────────────────────────
+function computeEnergy(data, w, h) {
+  const energy = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const xL = getPixel(data, w, Math.max(x-1,0), y);
+      const xR = getPixel(data, w, Math.min(x+1,w-1), y);
+      const yU = getPixel(data, w, x, Math.max(y-1,0));
+      const yD = getPixel(data, w, x, Math.min(y+1,h-1));
+      let e = 0;
+      for (let c = 0; c < 3; c++) {
+        const dx = xR[c] - xL[c];
+        const dy = yD[c] - yU[c];
+        e += dx*dx + dy*dy;
+      }
+      energy[y * w + x] = Math.sqrt(e);
+    }
+  }
+  return energy;
+}
+
+// ── Find minimum-energy vertical seam ────────────────────────
+function findVerticalSeam(energy, w, h) {
+  const dp   = new Float32Array(w * h);
+  const back = new Int8Array(w * h); // -1, 0, +1
+
+  // Init top row
+  for (let x = 0; x < w; x++) dp[x] = energy[x];
+
+  for (let y = 1; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let minE = dp[(y-1)*w + x], dir = 0;
+      if (x > 0   && dp[(y-1)*w + x-1] < minE) { minE = dp[(y-1)*w + x-1]; dir = -1; }
+      if (x < w-1 && dp[(y-1)*w + x+1] < minE) { minE = dp[(y-1)*w + x+1]; dir =  1; }
+      dp[y*w + x]   = energy[y*w + x] + minE;
+      back[y*w + x] = dir;
+    }
+  }
+
+  // Backtrack
+  const seam = new Int32Array(h);
+  let minX = 0;
+  for (let x = 1; x < w; x++) if (dp[(h-1)*w + x] < dp[(h-1)*w + minX]) minX = x;
+  seam[h-1] = minX;
+  for (let y = h-2; y >= 0; y--) {
+    seam[y] = seam[y+1] + back[(y+1)*w + seam[y+1]];
+    seam[y] = Math.max(0, Math.min(w-1, seam[y]));
+  }
+  return seam;
+}
+
+// ── Remove one vertical seam → new (w-1) × h image ───────────
+function removeVerticalSeam(data, w, h, seam) {
+  const nw = w - 1;
+  const out = new Uint8ClampedArray(nw * h * 4);
+  for (let y = 0; y < h; y++) {
+    const cut = seam[y];
+    let outX = 0;
+    for (let x = 0; x < w; x++) {
+      if (x === cut) continue;
+      const si = (y * w + x) * 4;
+      const di = (y * nw + outX) * 4;
+      out[di]   = data[si];
+      out[di+1] = data[si+1];
+      out[di+2] = data[si+2];
+      out[di+3] = data[si+3];
+      outX++;
+    }
+  }
+  return out;
+}
+
+// ── Insert one vertical seam (duplicate it with avg) ─────────
+function insertVerticalSeam(data, w, h, seam) {
+  const nw = w + 1;
+  const out = new Uint8ClampedArray(nw * h * 4);
+  for (let y = 0; y < h; y++) {
+    const cut = seam[y];
+    let outX = 0;
+    for (let x = 0; x < w; x++) {
+      const si = (y * w + x) * 4;
+      const di = (y * nw + outX) * 4;
+      out[di]   = data[si];
+      out[di+1] = data[si+1];
+      out[di+2] = data[si+2];
+      out[di+3] = data[si+3];
+      outX++;
+      if (x === cut) {
+        // Insert averaged pixel
+        const xN = Math.min(x+1, w-1);
+        const si2 = (y * w + xN) * 4;
+        const di2 = (y * nw + outX) * 4;
+        out[di2]   = (data[si] + data[si2]) >> 1;
+        out[di2+1] = (data[si+1] + data[si2+1]) >> 1;
+        out[di2+2] = (data[si+2] + data[si2+2]) >> 1;
+        out[di2+3] = (data[si+3] + data[si2+3]) >> 1;
+        outX++;
+      }
+    }
+  }
+  return out;
+}
+
+// ── Transpose image (rotate 90°) so we can reuse vertical seam logic ──
+function transpose(data, w, h) {
+  const out = new Uint8ClampedArray(h * w * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = (y * w + x) * 4;
+      const di = (x * h + y) * 4;
+      out[di]   = data[si];
+      out[di+1] = data[si+1];
+      out[di+2] = data[si+2];
+      out[di+3] = data[si+3];
+    }
+  }
+  return out;
+}
+
+// ── Collect N seams at once for expansion (important!) ───────
+// Pre-compute all seams on ORIGINAL image before inserting
+// to avoid duplicate seams being inserted repeatedly.
+function collectSeams(data, w, h, n) {
+  let curData = data.slice();
+  let curW = w;
+  const seams = [];
+  const seamCols = []; // original x-positions (adjusted)
+
+  for (let k = 0; k < n; k++) {
+    const energy = computeEnergy(curData, curW, h);
+    const seam   = findVerticalSeam(energy, curW, h);
+    seams.push(seam);
+
+    // Track original positions
+    const origSeam = new Int32Array(h);
+    // We need to map back through previously removed seams
+    // Simple approach: mark removed cols
+    origSeam.set(seam);
+    seamCols.push(origSeam);
+
+    // Remove seam to find next lowest-energy seam
+    curData = removeVerticalSeam(curData, curW, h, seam);
+    curW--;
+
+    self.postMessage({ progress: Math.round(((k+1)/n)*50) });
+  }
+  return { seams, finalW: curW, finalData: curData };
+}
+
+// ── Main seam-carving resize (width axis) ────────────────────
+function seamResizeWidth(data, w, h, targetW) {
+  const delta = targetW - w;
+  if (delta === 0) return { data, w, h };
+
+  if (delta < 0) {
+    // SHRINK: remove |delta| seams one by one
+    let curData = data.slice();
+    let curW = w;
+    const steps = Math.abs(delta);
+    for (let k = 0; k < steps; k++) {
+      const energy = computeEnergy(curData, curW, h);
+      const seam   = findVerticalSeam(energy, curW, h);
+      curData = removeVerticalSeam(curData, curW, h, seam);
+      curW--;
+      if (k % 10 === 0) self.postMessage({ progress: Math.round((k/steps)*90) });
+    }
+    return { data: curData, w: curW, h };
+  } else {
+    // EXPAND: collect all seams first, then insert them
+    const steps = delta;
+    // Collect seams
+    let curData = data.slice();
+    let curW = w;
+    const collectedSeams = [];
+
+    for (let k = 0; k < steps; k++) {
+      const energy = computeEnergy(curData, curW, h);
+      const seam   = findVerticalSeam(energy, curW, h);
+      collectedSeams.push(seam.slice());
+      curData = removeVerticalSeam(curData, curW, h, seam);
+      curW--;
+      if (k % 5 === 0) self.postMessage({ progress: Math.round((k/steps)*45) });
+    }
+
+    // Now insert all collected seams into ORIGINAL image
+    // We need to adjust seam x-positions as we insert
+    curData = data.slice();
+    curW = w;
+
+    // Sort seams by their x values (leftmost first) so insertions stay consistent
+    // Adjust indices: after each insertion, shift right
+    for (let k = 0; k < collectedSeams.length; k++) {
+      const seam = collectedSeams[k];
+      // Adjust for previous insertions: seams inserted to the left shift this seam right
+      for (let y = 0; y < h; y++) {
+        let adjust = 0;
+        for (let j = 0; j < k; j++) {
+          if (collectedSeams[j][y] <= seam[y]) adjust++;
+        }
+        seam[y] += adjust;
+        seam[y] = Math.max(0, Math.min(curW - 1, seam[y]));
+      }
+      curData = insertVerticalSeam(curData, curW, h, seam);
+      curW++;
+      if (k % 5 === 0) self.postMessage({ progress: 45 + Math.round((k/collectedSeams.length)*45) });
+    }
+    return { data: curData, w: curW, h };
+  }
+}
+
+// ── MAIN ENTRY ────────────────────────────────────────────────
 self.onmessage = function(e) {
   const { imageData, targetW, targetH, srcW, srcH } = e.data;
-  const data = new Uint8ClampedArray(imageData);
+  let data = new Uint8ClampedArray(imageData);
+  let w = srcW, h = srcH;
 
-  // We'll use edge-stretch approach with a soft gradient blend
-  // for the non-subject areas to simulate content-aware fill.
-  // True seam carving is implemented for width reduction/addition only.
-
-  const srcCanvas = new OffscreenCanvas(srcW, srcH);
-  const srcCtx = srcCanvas.getContext('2d');
-  srcCtx.putImageData(new ImageData(data, srcW, srcH), 0, 0);
-
-  const outCanvas = new OffscreenCanvas(targetW, targetH);
-  const outCtx = outCanvas.getContext('2d');
-
-  // Fit the original image (contain) inside target
-  const scale = Math.min(targetW / srcW, targetH / srcH);
-  const fitW = Math.round(srcW * scale);
-  const fitH = Math.round(srcH * scale);
-  const offsetX = Math.round((targetW - fitW) / 2);
-  const offsetY = Math.round((targetH - fitH) / 2);
-
-  // ── Background fill: edge-aware gradient sampling ──
-  // Left fill
-  if (offsetX > 0) {
-    // Sample left column of original, scaled
-    const sliceCanvas = new OffscreenCanvas(1, fitH);
-    const sliceCtx = sliceCanvas.getContext('2d');
-    sliceCtx.drawImage(srcCanvas, 0, 0, 1, srcH, 0, 0, 1, fitH);
-    for (let x = 0; x < offsetX; x++) {
-      const alpha = 1 - (x / offsetX) * 0.15; // subtle fade
-      outCtx.globalAlpha = alpha;
-      outCtx.drawImage(sliceCanvas, 0, 0, 1, fitH, x, offsetY, 1, fitH);
-    }
-    outCtx.globalAlpha = 1;
-  }
-  // Right fill
-  if (offsetX > 0) {
-    const sliceCanvas = new OffscreenCanvas(1, fitH);
-    const sliceCtx = sliceCanvas.getContext('2d');
-    sliceCtx.drawImage(srcCanvas, srcW-1, 0, 1, srcH, 0, 0, 1, fitH);
-    for (let x = 0; x < offsetX; x++) {
-      outCtx.drawImage(sliceCanvas, 0, 0, 1, fitH, targetW - offsetX + x, offsetY, 1, fitH);
-    }
-  }
-  // Top fill
-  if (offsetY > 0) {
-    const sliceCanvas = new OffscreenCanvas(fitW, 1);
-    const sliceCtx = sliceCanvas.getContext('2d');
-    sliceCtx.drawImage(srcCanvas, 0, 0, srcW, 1, 0, 0, fitW, 1);
-    for (let y = 0; y < offsetY; y++) {
-      outCtx.drawImage(sliceCanvas, 0, 0, fitW, 1, offsetX, y, fitW, 1);
-    }
-  }
-  // Bottom fill
-  if (offsetY > 0) {
-    const sliceCanvas = new OffscreenCanvas(fitW, 1);
-    const sliceCtx = sliceCanvas.getContext('2d');
-    sliceCtx.drawImage(srcCanvas, 0, srcH-1, srcW, 1, 0, 0, fitW, 1);
-    for (let y = 0; y < offsetY; y++) {
-      outCtx.drawImage(sliceCanvas, 0, 0, fitW, 1, offsetX, targetH - offsetY + y, fitW, 1);
-    }
+  // Limit seam operations to avoid browser freezing on huge images
+  // Downsample first if image is very large
+  const MAX_DIM = 800;
+  let scaleDown = 1;
+  if (w > MAX_DIM || h > MAX_DIM) {
+    scaleDown = Math.min(MAX_DIM / w, MAX_DIM / h);
+    // We'll work at reduced size then upscale — use OffscreenCanvas
+    const tmpC = new OffscreenCanvas(Math.round(w * scaleDown), Math.round(h * scaleDown));
+    const tmpCtx = tmpC.getContext('2d');
+    tmpCtx.putImageData(new ImageData(data, w, h), 0, 0);
+    // Scale down
+    const sc = new OffscreenCanvas(Math.round(w * scaleDown), Math.round(h * scaleDown));
+    const scCtx = sc.getContext('2d');
+    scCtx.drawImage(tmpC, 0, 0, sc.width, sc.height);
+    const id = scCtx.getImageData(0, 0, sc.width, sc.height);
+    data = id.data;
+    w = sc.width; h = sc.height;
   }
 
-  // ── Blur the background areas ──
-  // We draw everything so far, apply blur, then draw the original sharp on top
-  // Strategy: draw bg on a temp canvas, blur it, then compose
-  const bgCanvas = new OffscreenCanvas(targetW, targetH);
-  const bgCtx = bgCanvas.getContext('2d');
-  bgCtx.filter = 'blur(18px)';
-  bgCtx.drawImage(outCanvas, 0, 0);
+  // Proportional target for seam-carved working size
+  const workTargetW = Math.round(targetW * (w / srcW));
+  const workTargetH = Math.round(targetH * (h / srcH));
 
-  outCtx.clearRect(0, 0, targetW, targetH);
-  outCtx.drawImage(bgCanvas, 0, 0);
+  // ── Step 1: Resize width ──────────────────────────────────
+  self.postMessage({ progress: 0, status: 'Resizing width…' });
+  const step1 = seamResizeWidth(data, w, h, workTargetW);
+  data = step1.data; w = step1.w; h = step1.h;
 
-  // ── Draw original image sharp in center ──
-  outCtx.shadowColor = 'rgba(0,0,0,0.12)';
-  outCtx.shadowBlur = 14;
-  outCtx.drawImage(srcCanvas, 0, 0, srcW, srcH, offsetX, offsetY, fitW, fitH);
-  outCtx.shadowColor = 'transparent';
+  // ── Step 2: Resize height (transpose → resize width → transpose back) ──
+  self.postMessage({ progress: 50, status: 'Resizing height…' });
+  let tData = transpose(data, w, h);
+  let tW = h, tH = w; // after transpose, width=h, height=w
+  const step2 = seamResizeWidth(tData, tW, tH, workTargetH);
+  tData = step2.data; tW = step2.w; tH = step2.h;
+  // Transpose back
+  data = transpose(tData, tW, tH);
+  w = tH; h = tW;
 
-  // Return result
+  // ── Step 3: Scale to exact target (nearest-neighbor already close) ───
+  self.postMessage({ progress: 95, status: 'Finalizing…' });
+  const finalC = new OffscreenCanvas(targetW, targetH);
+  const finalCtx = finalC.getContext('2d');
+  // Put seam-carved result
+  finalCtx.putImageData(new ImageData(data, w, h), 0, 0);
+  // Draw scaled to exact target
+  const outC = new OffscreenCanvas(targetW, targetH);
+  const outCtx = outC.getContext('2d');
+  outCtx.imageSmoothingEnabled = true;
+  outCtx.imageSmoothingQuality = 'high';
+  outCtx.drawImage(finalC, 0, 0, w, h, 0, 0, targetW, targetH);
+
   const result = outCtx.getImageData(0, 0, targetW, targetH);
-  self.postMessage({ imageData: result.data.buffer, width: targetW, height: targetH }, [result.data.buffer]);
+  self.postMessage({ done: true, imageData: result.data.buffer, width: targetW, height: targetH }, [result.data.buffer]);
 };
 `;
 
@@ -772,30 +979,37 @@ function getWorkerURL() {
 }
 
 function processAdaptiveResize() {
-  showProgress('Calculating adaptive resize…');
+  showProgress('Starting seam carving…', 0);
 
-  // Draw current image to an offscreen canvas to get pixel data
   const tmp = document.createElement('canvas');
   tmp.width = currentImage.width; tmp.height = currentImage.height;
   tmp.getContext('2d').drawImage(currentImage, 0, 0);
   const imgData = tmp.getContext('2d').getImageData(0, 0, tmp.width, tmp.height);
 
   const worker = new Worker(getWorkerURL());
+
   worker.onmessage = (e) => {
-    const { imageData, width, height } = e.data;
-    canvas.width = width; canvas.height = height;
-    const resultData = new Uint8ClampedArray(imageData);
-    ctx.putImageData(new ImageData(resultData, width, height), 0, 0);
-    hideProgress();
-    worker.terminate();
+    const msg = e.data;
+    if (msg.done) {
+      const { imageData, width, height } = msg;
+      canvas.width = width; canvas.height = height;
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(imageData), width, height), 0, 0);
+      hideProgress();
+      worker.terminate();
+    } else if (msg.progress !== undefined) {
+      const statusText = msg.status || 'Processing…';
+      showProgress(`${statusText} (${msg.progress}%)`, msg.progress);
+    }
   };
+
   worker.onerror = (err) => {
     console.error(err);
     hideProgress();
-    toast('Adaptive resize failed, switching to Smart Padding.', 'error');
+    toast('Seam carving failed. Switching to Smart Padding.', 'error');
     processSmartPadding();
     worker.terminate();
   };
+
   worker.postMessage({
     imageData: imgData.data.buffer,
     targetW: targetWidth,
@@ -805,12 +1019,16 @@ function processAdaptiveResize() {
   }, [imgData.data.buffer]);
 }
 
-function showProgress(msg) {
+function showProgress(msg, pct) {
   progressLabel.textContent = msg || 'Processing…';
   progressOverlay.style.display = 'flex';
+  const bar = document.getElementById('progressBar');
+  if (bar && pct !== undefined) bar.style.width = pct + '%';
 }
 function hideProgress() {
   progressOverlay.style.display = 'none';
+  const bar = document.getElementById('progressBar');
+  if (bar) bar.style.width = '0%';
 }
 
 // ─── Download ─────────────────────────────────────────────────────────────────
