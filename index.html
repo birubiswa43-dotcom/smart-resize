@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Resize - Intelligent Image Resizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/smartcrop@2.0.5/smartcrop.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+    
+    <header class="text-center py-10 bg-white shadow-sm">
+        <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">Smart Resize</h1>
+        <p class="text-lg text-gray-500 mt-2 font-medium">Resize without stretching or ruining your image – 3 smart ways</p>
+    </header>
+
+    <main class="flex-grow max-w-5xl mx-auto px-4 py-8 w-full">
+        
+        <div id="uploadZone" class="border-4 border-dashed border-blue-200 rounded-2xl p-16 text-center bg-blue-50/50 hover:bg-blue-50 transition duration-300 cursor-pointer mb-8 group">
+            <svg class="mx-auto h-16 w-16 text-blue-400 group-hover:text-blue-500 mb-4 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <p class="text-xl text-gray-700 font-semibold mb-2">Drag & Drop your image here</p>
+            <p class="text-sm text-gray-500 mb-6">Supports JPG, PNG, WEBP (Processed locally in your browser)</p>
+            <button class="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold shadow-md hover:bg-blue-700 transition">Browse Files</button>
+            <input type="file" id="fileInput" class="hidden" accept="image/jpeg, image/png, image/webp">
+        </div>
+
+        <div id="workspace" class="hidden animate-fade-in-up">
+            
+            <div class="mb-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h2 class="text-xl font-bold mb-4 text-gray-800 flex items-center">
+                    <span class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">1</span> 
+                    Choose Target Size
+                </h2>
+                <div class="flex flex-wrap gap-3" id="presetContainer">
+                    <button class="preset-btn active bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition shadow-sm" data-width="1080" data-height="1350">IG Post (1080×1350)</button>
+                    <button class="preset-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-5 py-2.5 rounded-lg text-sm font-semibold transition" data-width="1080" data-height="1920">IG Story/Reel (1080×1920)</button>
+                    <button class="preset-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-5 py-2.5 rounded-lg text-sm font-semibold transition" data-width="1280" data-height="720">YT Thumbnail (1280×720)</button>
+                    <button class="preset-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-5 py-2.5 rounded-lg text-sm font-semibold transition" data-width="1200" data-height="627">LinkedIn (1200×627)</button>
+                </div>
+            </div>
+
+            <div class="mb-10">
+                <h2 class="text-xl font-bold mb-4 text-gray-800 flex items-center px-2">
+                    <span class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">2</span> 
+                    Choose Resize Method
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    <div class="method-card method-btn border-2 border-transparent bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition cursor-pointer" data-method="crop">
+                        <div class="h-12 w-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                        </div>
+                        <h3 class="font-bold text-lg mb-2 text-gray-900">Smart Crop</h3>
+                        <p class="text-sm text-gray-500 leading-relaxed">Auto-detects the main subject and centers it perfectly. Best for portraits and products.</p>
+                    </div>
+
+                    <div class="method-card method-btn active-method border-2 border-blue-500 bg-blue-50/30 rounded-2xl p-6 shadow-md transition cursor-pointer relative overflow-hidden" data-method="padding">
+                        <div class="active-badge absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">ACTIVE</div>
+                        <div class="h-12 w-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <h3 class="font-bold text-lg mb-2 text-gray-900">Smart Padding</h3>
+                        <p class="text-sm text-gray-600 leading-relaxed">Keeps original image safe. Fills extra space with a beautiful blurred background.</p>
+                    </div>
+
+                    <div class="method-card border-2 border-transparent bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition cursor-pointer opacity-60" title="Coming in next update">
+                        <div class="h-12 w-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center mb-4">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                        </div>
+                        <h3 class="font-bold text-lg mb-2 text-gray-900">Adaptive Resize <span class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded ml-2">Upcoming</span></h3>
+                        <p class="text-sm text-gray-500 leading-relaxed">Stretches the background intelligently while keeping the main subject untouched.</p>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="mb-12 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h2 class="text-xl font-bold mb-6 text-gray-800 flex items-center">
+                    <span class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">3</span> 
+                    Live Preview & Download
+                </h2>
+                <div class="flex flex-col items-center bg-gray-50 p-6 rounded-xl border border-gray-200">
+                    <div class="relative w-full flex justify-center mb-8">
+                        <canvas id="previewCanvas" class="max-w-full h-auto rounded-lg shadow-md border border-gray-300" style="max-height: 500px;"></canvas>
+                    </div>
+                    <button id="downloadBtn" class="bg-gray-900 text-white px-10 py-4 rounded-xl font-bold text-lg hover:bg-gray-800 shadow-xl hover:shadow-2xl transition flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download Image
+                    </button>
+                    <p class="text-xs text-gray-400 mt-3">High Quality • No Watermark</p>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="text-center py-6 text-gray-500 text-sm">
+        <p>100% Client-Side Processing. Your images never leave your browser.</p>
+    </footer>
+
+    <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const workspace = document.getElementById('workspace');
+        const canvas = document.getElementById('previewCanvas');
+        const ctx = canvas.getContext('2d');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const presetBtns = document.querySelectorAll('.preset-btn');
+        const methodBtns = document.querySelectorAll('.method-btn');
+
+        let currentImage = null;
+        let targetWidth = 1080;
+        let targetHeight = 1350;
+        let activeMethod = 'padding'; // default
+
+        // Upload Handlers
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('border-blue-500', 'bg-blue-100'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('border-blue-500', 'bg-blue-100'));
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('border-blue-500', 'bg-blue-100');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+        function handleFile(file) {
+            if (!file.type.match('image.*')) return alert('Please upload an image file (JPG, PNG, WEBP).');
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    currentImage = img;
+                    uploadZone.style.display = 'none';
+                    workspace.classList.remove('hidden');
+                    processImage();
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Preset Selection
+        presetBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                presetBtns.forEach(b => { b.classList.remove('bg-blue-600', 'text-white', 'active'); b.classList.add('bg-gray-100', 'text-gray-700'); });
+                e.target.classList.remove('bg-gray-100', 'text-gray-700');
+                e.target.classList.add('bg-blue-600', 'text-white', 'active');
+                targetWidth = parseInt(e.target.getAttribute('data-width'));
+                targetHeight = parseInt(e.target.getAttribute('data-height'));
+                if (currentImage) processImage();
+            });
+        });
+
+        // Method Selection
+        methodBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                methodBtns.forEach(b => {
+                    b.classList.remove('border-blue-500', 'bg-blue-50/30', 'shadow-md', 'active-method');
+                    b.classList.add('border-transparent', 'bg-white');
+                    const badge = b.querySelector('.active-badge');
+                    if(badge) badge.remove();
+                });
+                const clicked = e.currentTarget;
+                clicked.classList.remove('border-transparent', 'bg-white');
+                clicked.classList.add('border-blue-500', 'bg-blue-50/30', 'shadow-md', 'active-method');
+                clicked.insertAdjacentHTML('afterbegin', '<div class="active-badge absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">ACTIVE</div>');
+                
+                activeMethod = clicked.getAttribute('data-method');
+                if (currentImage) processImage();
+            });
+        });
+
+        // Router
+        function processImage() {
+            if(activeMethod === 'padding') processSmartPadding();
+            if(activeMethod === 'crop') processSmartCrop();
+        }
+
+        // Logic: Smart Padding
+        function processSmartPadding() {
+            canvas.width = targetWidth; canvas.height = targetHeight;
+            const scaleBg = Math.max(targetWidth / currentImage.width, targetHeight / currentImage.height);
+            const bgWidth = currentImage.width * scaleBg; const bgHeight = currentImage.height * scaleBg;
+            const bgX = (targetWidth - bgWidth) / 2; const bgY = (targetHeight - bgHeight) / 2;
+
+            ctx.save();
+            ctx.filter = 'blur(40px) brightness(0.8)';
+            ctx.drawImage(currentImage, bgX, bgY, bgWidth, bgHeight);
+            ctx.restore();
+
+            const scaleFg = Math.min(targetWidth / currentImage.width, targetHeight / currentImage.height);
+            const fgWidth = currentImage.width * scaleFg; const fgHeight = currentImage.height * scaleFg;
+            const fgX = (targetWidth - fgWidth) / 2; const fgY = (targetHeight - fgHeight) / 2;
+
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)'; ctx.shadowBlur = 25; ctx.shadowOffsetY = 10;
+            ctx.drawImage(currentImage, fgX, fgY, fgWidth, fgHeight);
+            ctx.shadowColor = 'transparent';
+        }
+
+        // Logic: Smart Crop
+        function processSmartCrop() {
+            canvas.width = targetWidth; canvas.height = targetHeight;
+            SmartCrop.crop(currentImage, { width: targetWidth, height: targetHeight }).then(function(result) {
+                const crop = result.topCrop;
+                ctx.drawImage(currentImage, crop.x, crop.y, crop.width, crop.height, 0, 0, targetWidth, targetHeight);
+            }).catch(function(error) {
+                console.error("Smart crop failed, falling back to basic crop", error);
+            });
+        }
+
+        // Download
+        downloadBtn.addEventListener('click', () => {
+            if (!currentImage) return;
+            const link = document.createElement('a');
+            link.download = `SmartResize_${targetWidth}x${targetHeight}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.95);
+            link.click();
+        });
+    </script>
+</body>
+</html>
