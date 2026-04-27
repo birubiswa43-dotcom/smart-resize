@@ -16,12 +16,9 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
-        
-        /* Remove arrows from number input */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
-            -webkit-appearance: none; 
-            margin: 0; 
+            -webkit-appearance: none; margin: 0; 
         }
     </style>
 </head>
@@ -51,7 +48,6 @@
                     <span class="bg-blue-100 text-blue-600 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">1</span> 
                     Choose Target Size
                 </h2>
-                
                 <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
                     <div class="flex flex-wrap gap-3" id="presetContainer">
                         <button class="preset-btn active bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition shadow-sm" data-width="1080" data-height="1350">IG Post (1080×1350)</button>
@@ -59,7 +55,6 @@
                         <button class="preset-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-5 py-2.5 rounded-lg text-sm font-semibold transition" data-width="1280" data-height="720">YT Thumb (1280×720)</button>
                         <button class="preset-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-5 py-2.5 rounded-lg text-sm font-semibold transition" data-width="1200" data-height="627">LinkedIn (1200×627)</button>
                     </div>
-
                     <div class="flex items-center gap-2 md:pl-4 md:border-l-2 border-gray-200 w-full md:w-auto">
                         <span class="text-sm font-semibold text-gray-600">Custom:</span>
                         <input type="number" id="customWidth" placeholder="Width" class="w-20 px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:border-blue-500 transition">
@@ -94,12 +89,12 @@
                         <p class="text-sm text-gray-600 leading-relaxed">Keeps original image safe. Fills extra space with a beautiful blurred background.</p>
                     </div>
 
-                    <div class="method-card border-2 border-transparent bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition cursor-pointer opacity-60" title="Heavy processing feature coming later">
+                    <div class="method-card method-btn border-2 border-transparent bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition cursor-pointer" data-method="adaptive">
                         <div class="h-12 w-12 bg-green-100 text-green-600 rounded-xl flex items-center justify-center mb-4">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                         </div>
-                        <h3 class="font-bold text-lg mb-2 text-gray-900">Adaptive Resize <span class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded ml-2">Upcoming</span></h3>
-                        <p class="text-sm text-gray-500 leading-relaxed">Stretches the background intelligently while keeping the main subject untouched.</p>
+                        <h3 class="font-bold text-lg mb-2 text-gray-900">Adaptive Resize</h3>
+                        <p class="text-sm text-gray-500 leading-relaxed">Stretches the background edges intelligently while keeping the main subject 100% untouched.</p>
                     </div>
 
                 </div>
@@ -143,7 +138,6 @@
         const methodBtns = document.querySelectorAll('.method-btn');
         const currentSizeBadge = document.getElementById('currentSizeBadge');
         
-        // Custom Size Elements
         const customWidthInput = document.getElementById('customWidth');
         const customHeightInput = document.getElementById('customHeight');
         const applyCustomBtn = document.getElementById('applyCustomBtn');
@@ -151,15 +145,13 @@
         let currentImage = null;
         let targetWidth = 1080;
         let targetHeight = 1350;
-        let activeMethod = 'padding'; // default
+        let activeMethod = 'padding';
 
-        // Upload Handlers
         uploadZone.addEventListener('click', () => fileInput.click());
         uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('border-blue-500', 'bg-blue-100'); });
         uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('border-blue-500', 'bg-blue-100'));
         uploadZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadZone.classList.remove('border-blue-500', 'bg-blue-100');
+            e.preventDefault(); uploadZone.classList.remove('border-blue-500', 'bg-blue-100');
             if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
         });
         fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
@@ -180,110 +172,119 @@
             reader.readAsDataURL(file);
         }
 
-        // Helper function to update size badge
-        function updateSizeBadge() {
-            currentSizeBadge.innerText = `${targetWidth} × ${targetHeight}`;
-        }
+        function updateSizeBadge() { currentSizeBadge.innerText = `${targetWidth} × ${targetHeight}`; }
 
-        // Preset Selection
         presetBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
-                // Remove active styling from all presets
                 presetBtns.forEach(b => { b.classList.remove('bg-blue-600', 'text-white', 'active'); b.classList.add('bg-gray-100', 'text-gray-700'); });
-                // Clear custom inputs to avoid confusion
-                customWidthInput.value = '';
-                customHeightInput.value = '';
-                
-                // Add active styling to clicked
-                e.target.classList.remove('bg-gray-100', 'text-gray-700');
-                e.target.classList.add('bg-blue-600', 'text-white', 'active');
-                
-                targetWidth = parseInt(e.target.getAttribute('data-width'));
-                targetHeight = parseInt(e.target.getAttribute('data-height'));
-                
-                updateSizeBadge();
-                if (currentImage) processImage();
+                customWidthInput.value = ''; customHeightInput.value = '';
+                e.target.classList.remove('bg-gray-100', 'text-gray-700'); e.target.classList.add('bg-blue-600', 'text-white', 'active');
+                targetWidth = parseInt(e.target.getAttribute('data-width')); targetHeight = parseInt(e.target.getAttribute('data-height'));
+                updateSizeBadge(); if (currentImage) processImage();
             });
         });
 
-        // Custom Size Apply
         applyCustomBtn.addEventListener('click', () => {
-            const w = parseInt(customWidthInput.value);
-            const h = parseInt(customHeightInput.value);
-            
-            if (!w || !h || w <= 0 || h <= 0) {
-                alert("Please enter valid positive numbers for width and height.");
-                return;
-            }
-
-            // Remove active styling from all presets because user is using custom
+            const w = parseInt(customWidthInput.value); const h = parseInt(customHeightInput.value);
+            if (!w || !h || w <= 0 || h <= 0) return alert("Please enter valid positive numbers.");
             presetBtns.forEach(b => { b.classList.remove('bg-blue-600', 'text-white', 'active'); b.classList.add('bg-gray-100', 'text-gray-700'); });
-
-            targetWidth = w;
-            targetHeight = h;
-            
-            updateSizeBadge();
-            if (currentImage) processImage();
+            targetWidth = w; targetHeight = h; updateSizeBadge(); if (currentImage) processImage();
         });
 
-        // Method Selection
         methodBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 methodBtns.forEach(b => {
                     b.classList.remove('border-blue-500', 'bg-blue-50/30', 'shadow-md', 'active-method');
                     b.classList.add('border-transparent', 'bg-white');
-                    const badge = b.querySelector('.active-badge');
-                    if(badge) badge.remove();
+                    const badge = b.querySelector('.active-badge'); if(badge) badge.remove();
                 });
                 const clicked = e.currentTarget;
                 clicked.classList.remove('border-transparent', 'bg-white');
                 clicked.classList.add('border-blue-500', 'bg-blue-50/30', 'shadow-md', 'active-method');
                 clicked.insertAdjacentHTML('afterbegin', '<div class="active-badge absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">ACTIVE</div>');
-                
                 activeMethod = clicked.getAttribute('data-method');
                 if (currentImage) processImage();
             });
         });
 
-        // Router
         function processImage() {
             if(activeMethod === 'padding') processSmartPadding();
             if(activeMethod === 'crop') processSmartCrop();
+            if(activeMethod === 'adaptive') processAdaptiveResize();
         }
 
-        // Logic: Smart Padding
         function processSmartPadding() {
             canvas.width = targetWidth; canvas.height = targetHeight;
             const scaleBg = Math.max(targetWidth / currentImage.width, targetHeight / currentImage.height);
             const bgWidth = currentImage.width * scaleBg; const bgHeight = currentImage.height * scaleBg;
             const bgX = (targetWidth - bgWidth) / 2; const bgY = (targetHeight - bgHeight) / 2;
 
-            ctx.save();
-            ctx.filter = 'blur(40px) brightness(0.8)';
-            ctx.drawImage(currentImage, bgX, bgY, bgWidth, bgHeight);
-            ctx.restore();
+            ctx.save(); ctx.filter = 'blur(40px) brightness(0.8)';
+            ctx.drawImage(currentImage, bgX, bgY, bgWidth, bgHeight); ctx.restore();
 
             const scaleFg = Math.min(targetWidth / currentImage.width, targetHeight / currentImage.height);
             const fgWidth = currentImage.width * scaleFg; const fgHeight = currentImage.height * scaleFg;
             const fgX = (targetWidth - fgWidth) / 2; const fgY = (targetHeight - fgHeight) / 2;
 
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.4)'; ctx.shadowBlur = 25; ctx.shadowOffsetY = 10;
-            ctx.drawImage(currentImage, fgX, fgY, fgWidth, fgHeight);
-            ctx.shadowColor = 'transparent';
+            ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 25; ctx.shadowOffsetY = 10;
+            ctx.drawImage(currentImage, fgX, fgY, fgWidth, fgHeight); ctx.shadowColor = 'transparent';
         }
 
-        // Logic: Smart Crop
         function processSmartCrop() {
             canvas.width = targetWidth; canvas.height = targetHeight;
             SmartCrop.crop(currentImage, { width: targetWidth, height: targetHeight }).then(function(result) {
                 const crop = result.topCrop;
                 ctx.drawImage(currentImage, crop.x, crop.y, crop.width, crop.height, 0, 0, targetWidth, targetHeight);
-            }).catch(function(error) {
-                console.error("Smart crop failed, falling back to basic crop", error);
+            }).catch(function() {
+                // Fallback to center crop
+                const scale = Math.max(targetWidth / currentImage.width, targetHeight / currentImage.height);
+                const w = currentImage.width * scale; const h = currentImage.height * scale;
+                ctx.drawImage(currentImage, (targetWidth - w)/2, (targetHeight - h)/2, w, h);
             });
         }
 
-        // Download
+        // --- NEW: Adaptive Resize Logic (Content-Aware Edge Fill) ---
+        function processAdaptiveResize() {
+            canvas.width = targetWidth; canvas.height = targetHeight;
+            
+            // Fit image completely inside the target size (Contain)
+            const scale = Math.min(targetWidth / currentImage.width, targetHeight / currentImage.height);
+            const imgW = currentImage.width * scale;
+            const imgH = currentImage.height * scale;
+            const x = (targetWidth - imgW) / 2;
+            const y = (targetHeight - imgH) / 2;
+
+            // 1. Draw the Background Stretch (Edge replication)
+            ctx.save();
+            // Stretch horizontally
+            if (x > 0) {
+                ctx.drawImage(currentImage, 0, 0, 1, currentImage.height, 0, 0, x, targetHeight); // Left stretch
+                ctx.drawImage(currentImage, currentImage.width - 1, 0, 1, currentImage.height, targetWidth - x, 0, x, targetHeight); // Right stretch
+            }
+            // Stretch vertically
+            if (y > 0) {
+                ctx.drawImage(currentImage, 0, 0, currentImage.width, 1, 0, 0, targetWidth, y); // Top stretch
+                ctx.drawImage(currentImage, 0, currentImage.height - 1, currentImage.width, 1, 0, targetHeight - y, targetWidth, y); // Bottom stretch
+            }
+            
+            // Apply slight blur to stretched areas to hide strict pixel lines
+            ctx.filter = 'blur(15px)';
+            if (x > 0) {
+                ctx.drawImage(canvas, 0, 0, x, targetHeight, 0, 0, x, targetHeight);
+                ctx.drawImage(canvas, targetWidth - x, 0, x, targetHeight, targetWidth - x, 0, x, targetHeight);
+            }
+            if (y > 0) {
+                ctx.drawImage(canvas, 0, 0, targetWidth, y, 0, 0, targetWidth, y);
+                ctx.drawImage(canvas, 0, targetHeight - y, targetWidth, y, 0, targetHeight - y, targetWidth, y);
+            }
+            ctx.restore();
+
+            // 2. Draw Original Unstretched Subject in Center
+            ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 10;
+            ctx.drawImage(currentImage, x, y, imgW, imgH);
+            ctx.shadowColor = 'transparent';
+        }
+
         downloadBtn.addEventListener('click', () => {
             if (!currentImage) return;
             const link = document.createElement('a');
